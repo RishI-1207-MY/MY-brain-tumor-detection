@@ -1,6 +1,7 @@
 import cv2  
 import tensorflow as tf 
 import streamlit as st
+import os
 
 import numpy as np
 import pandas as pd
@@ -174,11 +175,21 @@ section[data-testid="stSidebar"] *{
 # LOAD MODEL
 # ==================================
 
+print("Current files:")
+print(os.listdir())
+
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model(
-        "best_brain_tumor_model.keras"
+    print("Loading model...")
+
+    model = tf.keras.models.load_model(
+        "best_brain_tumor_model.keras",
+        compile=False
     )
+
+    print("Model loaded successfully!")
+
+    return model
 
 model = load_model()
 def make_gradcam_heatmap(img_array, model):
