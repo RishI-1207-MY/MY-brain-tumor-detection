@@ -1,5 +1,7 @@
+import cv2  
+import tensorflow as tf 
 import streamlit as st
-import tensorflow as tf
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -20,52 +22,149 @@ st.set_page_config(
 # ==================================
 
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
 <style>
 
-.stApp {
-    background-color: #f4f7fc;
+html, body, [class*="css"]{
+    font-family: 'Poppins', sans-serif;
 }
 
-.main-title {
-    text-align: center;
-    font-size: 52px;
-    font-weight: 700;
-    color: #0f172a;
+.stApp{
+    background: linear-gradient(
+        135deg,
+        #0f172a,
+        #1e293b,
+        #0f172a
+    );
+    color:white;
 }
 
-.subtitle {
-    text-align: center;
-    color: #475569;
-    font-size: 20px;
+/* HERO */
+
+.hero{
+    background: linear-gradient(
+        135deg,
+        rgba(59,130,246,0.25),
+        rgba(139,92,246,0.25)
+    );
+
+    backdrop-filter: blur(20px);
+
+    border:1px solid rgba(255,255,255,0.15);
+
+    padding:40px;
+
+    border-radius:30px;
+
+    text-align:center;
+
+    margin-bottom:30px;
+
+    box-shadow:
+    0px 10px 30px rgba(0,0,0,0.3);
 }
 
-.metric-box {
-    background: white;
-    padding: 20px;
-    border-radius: 15px;
-    box-shadow: 0px 3px 10px rgba(0,0,0,0.1);
-    text-align: center;
+.hero h1{
+    font-size:60px;
+    color:white;
+    font-weight:700;
 }
 
-.prediction-card {
-    background: white;
-    padding: 25px;
-    border-radius: 20px;
-    box-shadow: 0px 3px 15px rgba(0,0,0,0.1);
+.hero p{
+    color:#cbd5e1;
+    font-size:20px;
 }
 
-.sidebar-header {
-    color: white;
-    font-size: 24px;
-    font-weight: bold;
+/* GLASS CARD */
+
+.glass-card{
+    background:rgba(255,255,255,0.08);
+
+    backdrop-filter: blur(20px);
+
+    border:1px solid rgba(255,255,255,0.1);
+
+    border-radius:25px;
+
+    padding:25px;
+
+    box-shadow:
+    0px 10px 30px rgba(0,0,0,0.25);
+
+    transition:0.3s;
 }
 
-section[data-testid="stSidebar"] {
-    background: #1e40af;
+.glass-card:hover{
+    transform:translateY(-5px);
 }
 
-section[data-testid="stSidebar"] * {
-    color: white !important;
+/* METRIC */
+
+.metric-card{
+
+    background:linear-gradient(
+    135deg,
+    #2563eb,
+    #7c3aed
+    );
+
+    border-radius:25px;
+
+    padding:25px;
+
+    text-align:center;
+
+    color:white;
+
+    box-shadow:
+    0px 10px 25px rgba(0,0,0,0.3);
+}
+
+.metric-card h1{
+    font-size:40px;
+}
+
+.metric-card p{
+    font-size:18px;
+}
+
+/* Prediction */
+
+.prediction-card{
+
+    background:linear-gradient(
+    135deg,
+    #059669,
+    #10b981
+    );
+
+    padding:30px;
+
+    border-radius:25px;
+
+    color:white;
+
+    text-align:center;
+
+    box-shadow:
+    0px 10px 30px rgba(0,0,0,0.3);
+}
+
+/* Sidebar */
+
+section[data-testid="stSidebar"]{
+
+    background:
+    linear-gradient(
+    180deg,
+    #1e3a8a,
+    #0f172a
+    );
+}
+
+section[data-testid="stSidebar"] *{
+    color:white !important;
 }
 
 </style>
@@ -82,6 +181,71 @@ def load_model():
     )
 
 model = load_model()
+def make_gradcam_heatmap(img_array, model):
+
+    efficientnet = model.get_layer("efficientnetb0")
+
+    feature_extractor = tf.keras.Model(
+        efficientnet.input,
+        efficientnet.output
+    )
+
+    with tf.GradientTape() as tape:
+
+        img_tensor = tf.convert_to_tensor(
+            img_array,
+            dtype=tf.float32
+        )
+
+        features = feature_extractor(
+            img_tensor,
+            training=False
+        )
+
+        tape.watch(features)
+
+        x = model.layers[3](features)
+        x = model.layers[4](x, training=False)
+        x = model.layers[5](x)
+        x = model.layers[6](x, training=False)
+        predictions = model.layers[7](x)
+
+        pred_index = tf.argmax(
+            predictions[0]
+        )
+
+        class_channel = predictions[
+            :,
+            pred_index
+        ]
+
+    grads = tape.gradient(
+        class_channel,
+        features
+    )
+
+    pooled_grads = tf.reduce_mean(
+        grads,
+        axis=(0,1,2)
+    )
+
+    features = features[0]
+
+    heatmap = tf.reduce_sum(
+        features * pooled_grads,
+        axis=-1
+    )
+
+    heatmap = tf.maximum(
+        heatmap,
+        0
+    )
+
+    heatmap /= (
+        tf.reduce_max(heatmap) + 1e-8
+    )
+
+    return heatmap.numpy()
 
 # ==================================
 # CLASS NAMES
@@ -135,16 +299,22 @@ AI & Deep Learning Project
 # HEADER
 # ==================================
 
-st.markdown(
-    "<div class='main-title'>🧠 Brain Tumor AI Dashboard</div>",
-    unsafe_allow_html=True
-)
+st.markdown("""
+<div class="hero">
 
-st.markdown(
-    "<div class='subtitle'>MRI Classification using Deep Learning</div>",
-    unsafe_allow_html=True
-)
+<h1>🧠 Brain Tumor AI</h1>
 
+<p>
+Deep Learning Powered MRI Diagnosis Platform
+</p>
+
+</div>
+""", unsafe_allow_html=True)
+#brain banner image
+st.image(
+    "https://images.unsplash.com/photo-1532187643603-ba119ca4109e",
+    use_container_width=True
+)
 st.write("")
 st.write("")
 
@@ -156,24 +326,24 @@ c1, c2, c3 = st.columns(3)
 
 with c1:
     st.markdown("""
-    <div class="metric-box">
-    <h2>4</h2>
+    <div class='metric-card'>
+    <h1>4</h1>
     <p>Tumor Classes</p>
     </div>
     """, unsafe_allow_html=True)
 
 with c2:
     st.markdown("""
-    <div class="metric-box">
-    <h2>224×224</h2>
-    <p>Input Size</p>
+    <div class='metric-card'>
+    <h1>224</h1>
+    <p>Input Resolution</p>
     </div>
     """, unsafe_allow_html=True)
 
 with c3:
     st.markdown("""
-    <div class="metric-box">
-    <h2>AI</h2>
+    <div class='metric-card'>
+    <h1>AI</h1>
     <p>EfficientNetB0</p>
     </div>
     """, unsafe_allow_html=True)
@@ -233,6 +403,36 @@ if uploaded_file:
         img_array,
         verbose=0
     )
+    heatmap = make_gradcam_heatmap(
+        img_array,
+        model
+    )
+
+    heatmap = cv2.resize(
+        heatmap,
+        (224,224)
+    )
+
+    heatmap = np.uint8(
+        255 * heatmap
+    )
+
+    heatmap = cv2.applyColorMap(
+        heatmap,
+        cv2.COLORMAP_JET
+    )
+
+    original = img_array[0].astype(
+        np.uint8
+    )
+
+    overlay = cv2.addWeighted(
+        original,
+        0.6,
+        heatmap,
+        0.4,
+        0
+    )
 
     predicted_class = class_names[
         np.argmax(prediction)
@@ -246,15 +446,18 @@ if uploaded_file:
 
         st.subheader("🔍 AI Diagnosis")
 
-        st.markdown(
-            f"""
-            <div class='prediction-card'>
-            <h2>{predicted_class}</h2>
-            <h3>Confidence: {confidence*100:.2f}%</h3>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown(f"""
+        <div class='prediction-card'>
+
+        <h1>{predicted_class}</h1>
+
+        <h2>
+        Confidence:
+        {confidence*100:.2f}%
+        </h2>
+
+        </div>
+        """, unsafe_allow_html=True)
 
         st.progress(confidence)
 
@@ -276,7 +479,9 @@ if uploaded_file:
 
         fig.update_layout(
             height=400,
-            template="plotly_white"
+            template="plotly_dark",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
         )
 
         st.plotly_chart(
@@ -284,40 +489,48 @@ if uploaded_file:
             use_container_width=True
         )
 
-        st.subheader("🩺 Recommendation")
+    st.subheader("🔥 Grad-CAM Explainability")
 
-        if predicted_class == "No Tumor":
-            st.success(
-                "No tumor detected."
-            )
+    st.image(
+        overlay,
+        caption="Areas focused by the AI model",
+        use_container_width=True
+    )
 
-        elif predicted_class == "Glioma":
-            st.error(
-                "Possible Glioma detected. Please consult a neurologist."
-            )
+    st.subheader("🩺 Recommendation")
 
-        elif predicted_class == "Meningioma":
-            st.warning(
-                "Possible Meningioma detected. Further medical evaluation recommended."
-            )
+    if predicted_class == "No Tumor":
+        st.success("No tumor detected.")
 
-        elif predicted_class == "Pituitary":
-            st.warning(
-                "Possible Pituitary Tumor detected. Specialist consultation advised."
-            )
+    elif predicted_class == "Glioma":
+        st.error(
+            "Possible Glioma detected. Please consult a neurologist."
+        )
 
+    elif predicted_class == "Meningioma":
+        st.warning(
+            "Possible Meningioma detected. Further medical evaluation recommended."
+        )
+
+    elif predicted_class == "Pituitary":
+        st.warning(
+            "Possible Pituitary Tumor detected. Specialist consultation advised."
+        )
 # ==================================
 # FOOTER
 # ==================================
+st.markdown("""
+<hr>
 
-st.markdown("---")
+<center>
 
-st.markdown(
-    """
-    <center>
-    <b>Developed by Rishi Khandelwal</b><br>
-    Brain Tumor Detection using Deep Learning & EfficientNetB0
-    </center>
-    """,
-    unsafe_allow_html=True
-)
+<h4>
+Developed by Rishi Khandelwal
+</h4>
+
+<p>
+Deep Learning • TensorFlow • EfficientNetB0 • Explainable AI
+</p>
+
+</center>
+""", unsafe_allow_html=True)
